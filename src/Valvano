@@ -1,0 +1,64 @@
+// This function involved 2 things
+// 1 - Reading the appropriate chapters in the data sheet
+// 2 - Looking at the 
+void UartSetup()
+{
+	SYSCTL_RCGC1_R |= SYSCTL_RCGC1_UART0; // activate UART0
+  SYSCTL_RCGC2_R |= SYSCTL_RCGC2_GPIOA; // activate port A
+  UART0_CTL_R &= ~UART_CTL_UARTEN;      // disable UART
+  UART0_IBRD_R = 27;                    // IBRD = int(50,000,000 / (16 * 115,200)) = int(27.1267)
+  UART0_FBRD_R = 8;                     // FBRD = int(0.1267 * 64 + 0.5) = 8
+                                        // 8 bit word length (no parity bits, one stop bit, FIFOs)
+  UART0_LCRH_R = (UART_LCRH_WLEN_8|UART_LCRH_FEN);
+  UART0_CTL_R |= UART_CTL_UARTEN;       // enable UART
+  GPIO_PORTA_AFSEL_R |= 0x03;           // enable alt funct on PA1-0
+  GPIO_PORTA_DEN_R |= 0x03;             // enable digital I/O on PA1-0
+}
+
+
+// solid state relay connected to PD5
+
+#define GPIO_PORTD_DATA_R       (*((volatile unsigned long *)0x400073FC))
+#define GPIO_PORTD_DIR_R        (*((volatile unsigned long *)0x40007400))
+#define GPIO_PORTD_AFSEL_R      (*((volatile unsigned long *)0x40007420))
+#define GPIO_PORTD_DEN_R        (*((volatile unsigned long *)0x4000751C))
+#define PD5                     (*((volatile unsigned long *)0x40007080))
+#define SYSCTL_RCGC2_R          (*((volatile unsigned long *)0x400FE108))
+#define SYSCTL_RCGC2_GPIOD      0x00000008  // port D Clock Gating Control
+
+// Make PD5 an output and enable digital I/O
+SSR_Init(void){ volatile unsigned long delay;
+  SYSCTL_RCGC2_R |= 0x00000008;  // 1) activate clock for Port D
+  delay = SYSCTL_RCGC2_R;        // allow time for clock to start
+  GPIO_PORTD_DIR_R |= 0x20;      // 2) set direction register
+  GPIO_PORTD_AFSEL_R &= ~0x20;   // 3) regular port function
+  GPIO_PORTD_DEN_R |= 0x20;      // 4) enable digital port
+}
+// Make PD5 high
+void SSR_On(void){
+  PD5 = 0x20;
+//  GPIO_PORTD_DATA_R |= 0x20;
+}
+// Make PD5 low
+void SSR_Off(void){
+  PD5 = 0x00;
+//  GPIO_PORTD_DATA_R &= ~0x20;
+}
+
+//debug code
+#define GPIO_PORTC_DATA_R       (*((volatile unsigned long *)0x400063FC))
+#define GPIO_PORTC_DIR_R        (*((volatile unsigned long *)0x40006400))
+#define GPIO_PORTC_DEN_R        (*((volatile unsigned long *)0x4000651C))
+#define SYSCTL_RCGC2_GPIOC      0x00000004  // port C Clock Gating Control
+int main(void){
+  SYSCTL_RCGC2_R |= SYSCTL_RCGC2_GPIOC;// activate port C
+  SSR_Init();               // initialize PD5 and make it output
+  GPIO_PORTC_DIR_R &= ~0x10;// make PC4 in (PC4 built-in button)
+  GPIO_PORTC_DEN_R |= 0x10; // enable digital I/O on PC4
+  while(1){
+    SSR_On();
+    while(GPIO_PORTC_DATA_R&0x10); // wait for button press
+    SSR_Off();
+    while(GPIO_PORTC_DATA_R&0x10); // wait for button press
+  }
+}
